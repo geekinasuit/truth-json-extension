@@ -1,0 +1,100 @@
+/*
+ * Copyright (c) 2022, Christian Gruber
+ * Licensed under the Apache 2.0 open-source license.
+ *
+ * TODO: put standard headers here.
+ */
+package com.geekinasuit.truth.json
+
+import com.google.common.base.Objects
+import com.google.common.base.Strings
+import com.google.common.truth.Fact
+import com.google.common.truth.FailureMetadata
+import com.google.common.truth.Subject
+import com.google.errorprone.annotations.CheckReturnValue
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonElement
+
+
+/**
+ * Truth subjects for [JsonElement] in Gson.
+ */
+@CheckReturnValue
+class JsonSubject internal constructor(
+  metadata: FailureMetadata,
+  private val actual: JsonElement?,
+) : Subject(metadata, actual) {
+
+  override fun actualCustomStringRepresentation(): String = gson.toJson(actual)
+
+  /**
+   * Checks whether the [JsonElement] is equivalent to the argument, using the standard equals()
+   * implementation.
+   */
+  override fun isEqualTo(expected: Any?) {
+    val expected = if (expected is JsonElement) expected else gson.toJsonTree(expected)
+    when {
+      Objects.equal(actual, expected) -> return
+      actual == null || expected == null -> super.isEqualTo(expected)
+      actual.javaClass != expected.javaClass -> {
+        failWithoutActual(
+          Fact.simpleFact(
+            Strings.lenientFormat(
+              "Not true that (%s) proto is equal to the expected (%s) object. "
+                + "They are not of the same class.",
+              actual.javaClass.name, expected.javaClass.name
+            )
+          )
+        )
+      }
+      else -> {
+        // Pretty print both json elements, so their strings will be normalized, and the
+        // output will be reasonable.
+        val ourString = gson.toJson(actual)
+        val theirString = gson.toJson(expected as JsonElement?)
+        check("string comparison").that(ourString).isEqualTo(theirString)
+      }
+    }
+  }
+
+  override fun isNotEqualTo(expected: Any?) {
+    if (Objects.equal(actual, expected)) {
+      if (actual == null) {
+        super.isNotEqualTo(expected)
+      } else {
+        failWithoutActual(
+          Fact.simpleFact(
+            Strings.lenientFormat(
+              "Not true that protos are different. Both are (%s) <%s>.",
+              actual.javaClass.name, gson.toJson(actual)
+            )
+          )
+        )
+      }
+    }
+  }
+
+  private object JsonSubjectFactory : Factory<JsonSubject, JsonElement?> {
+    override fun createSubject(
+      failureMetadata: FailureMetadata,
+      element: JsonElement?
+    ): JsonSubject = JsonSubject(failureMetadata, element)
+  }
+
+  companion object {
+    private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
+
+    /**
+     * Returns a `Subject.Factory` for [JsonElement] subjects which you can use to assert
+     * things about Lite Protobuf properties. (Legacy for Java callers)
+     */
+    fun json() = json
+
+    /**
+     * A `Subject.Factory` for [JsonElement] subjects which you can use to assert
+     * things about Lite Protobuf properties.
+     */
+    var json: Factory<JsonSubject, JsonElement?> = JsonSubjectFactory
+  }
+}
